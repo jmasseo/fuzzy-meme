@@ -1,0 +1,135 @@
+# tasks/main.yml
+---
+- block:
+    - name: Create a new branch
+      uri:
+        url: "{{ gitlab_api_url }}/projects/{{ gitlab_project_id }}/repository/branches"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_private_token }}"
+          Content-Type: "application/json"
+        body: |
+          {
+            "branch": "{{ new_branch_name }}",
+            "ref": "{{ source_branch_name }}"
+          }
+        body_format: json
+        status_code: 201
+      register: create_branch_response
+
+  rescue:
+    - debug:
+        msg: "Create a new branch - FAILURE"
+  always:
+    - debug:
+        msg: "Create a new branch - SUCCESS"
+
+- block:
+    - name: Commit a new file to the branch
+      uri:
+        url: "{{ gitlab_api_url }}/projects/{{ gitlab_project_id }}/repository/commits"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_private_token }}"
+          Content-Type: "application/json"
+        body: |
+          {
+            "branch": "{{ new_branch_name }}",
+            "commit_message": "{{ commit_message }}",
+            "actions": [
+              {
+                "action": "create",
+                "file_path": "{{ new_file_path }}",
+                "content": "{{ new_file_content }}"
+              }
+            ]
+          }
+        body_format: json
+        status_code: 201
+      register: commit_file_response
+
+  rescue:
+    - debug:
+        msg: "Commit a new file to the branch - FAILURE"
+  always:
+    - debug:
+        msg: "Commit a new file to the branch - SUCCESS"
+
+- block:
+    - name: Create a merge request
+      uri:
+        url: "{{ gitlab_api_url }}/projects/{{ gitlab_project_id }}/merge_requests"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_private_token }}"
+          Content-Type: "application/json"
+        body: |
+          {
+            "source_branch": "{{ new_branch_name }}",
+            "target_branch": "{{ source_branch_name }}",
+            "title": "{{ merge_request_title }}"
+          }
+        body_format: json
+        status_code: 201
+      register: create_merge_request_response
+
+  rescue:
+    - debug:
+        msg: "Create a merge request - FAILURE"
+  always:
+    - debug:
+        msg: "Create a merge request - SUCCESS {{ create_merge_request_response.json.iid }}"
+
+- block:
+    - name: Approve merge request
+      uri:
+        url: "{{ gitlab_api_url }}/projects/{{ gitlab_project_id }}/merge_requests/{{ create_merge_request_response.json.iid }}/approve"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_private_token }}"
+          Content-Type: "application/json"
+        status_code: 201
+      when: auto_approve_merge | default(false)
+
+  rescue:
+    - debug:
+        msg: "Approve merge request - FAILURE"
+  always:
+    - debug:
+        msg: "Approve merge request - SUCCESS"
+
+- block:
+    - name: Merge the merge request
+      uri:
+        url: "{{ gitlab_api_url }}/projects/{{ gitlab_project_id }}/merge_requests/{{ create_merge_request_response.json.iid }}/merge"
+        method: PUT
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_private_token }}"
+          Content-Type: "application/json"
+        status_code: 200
+      when: auto_merge_merge | default(false)
+
+  rescue:
+    - debug:
+        msg: "Merge the merge request - FAILURE"
+  always:
+    - debug:
+        msg: "Merge the merge request - SUCCESS"
+
+- block:
+    - name: Delete the branch
+      uri:
+        url: "{{ gitlab_api_url }}/projects/{{ gitlab_project_id }}/repository/branches/{{ new_branch_name }}"
+        method: DELETE
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_private_token }}"
+          Content-Type: "application/json"
+        status_code: 204
+      when: auto_delete_branch | default(false)
+
+  rescue:
+    - debug:
+        msg: "Delete the branch - FAILURE"
+  always:
+    - debug:
+        msg: "Delete the branch - SUCCESS"

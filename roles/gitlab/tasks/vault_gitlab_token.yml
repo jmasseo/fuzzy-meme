@@ -1,0 +1,34 @@
+# tasks/vault_gitlab_token.yml
+---
+- name: Authenticate with Vault using AppRole
+  uri:
+    url: "{{ vault_api_url }}/v1/auth/approle/login"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    body: |
+      {
+        "role_id": "{{ vault_role_id }}",
+        "secret_id": "{{ vault_secret_id }}"
+      }
+    body_format: json
+    status_code: 200
+  register: vault_auth_response
+
+- name: Set Vault token
+  set_fact:
+    vault_token: "{{ vault_auth_response.json.auth.client_token }}"
+
+- name: Fetch GitLab token from Vault
+  uri:
+    url: "{{ vault_api_url }}/v1/{{ vault_secret_path }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: gitlab_token_response
+
+- name: Set GitLab token
+  set_fact:
+    gitlab_private_token: "{{ gitlab_token_response.json.data.gitlab_token }}"

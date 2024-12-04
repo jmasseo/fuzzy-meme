@@ -1,0 +1,13 @@
+---
+- hosts: all
+  roles:
+  - role: gitlab
+    source_branch_name: main
+    new_branch_name: arbitrary_branch
+    commit_message: Test from ansible
+    new_file_path: new2.README.md
+    new_file_content: "There comes a time when all good readmes must be replaced."
+    merge_request_title: "Automated Merge Request"
+    auto_approve_merge: true
+    auto_merge_merge: true
+    auto_delete_branch: true
