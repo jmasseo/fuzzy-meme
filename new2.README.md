@@ -1,0 +1,1 @@
+There comes a time when all good readmes must be replaced.
