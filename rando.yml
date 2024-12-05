@@ -1,0 +1,75 @@
+- name: Terraform Enterprise Workspace Status Playbook
+  hosts: localhost
+  gather_facts: no
+  vars:
+    tfe_token: "{{ lookup('env', 'TFE_TOKEN') }}"
+    workspace_id: "{{ lookup('env', 'TFE_WORKSPACE_ID') }}"
+    tfe_api_url: "{{ lookup('env', 'TFE_API_URL') }}"
+  tasks:
+    - name: Get workspace details
+      uri:
+        url: "{{ tfe_api_url }}/api/v2/workspaces/{{ workspace_id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ tfe_token }}"
+          Content-Type: "application/vnd.api+json"
+      register: workspace_details
+      failed_when: workspace_details.status != 200
+      retries: 5
+      delay: 5
+      until: workspace_details.status == 200
+
+    - name: Register current run link
+      set_fact:
+        run_link: "{{ tfe_api_url }}{{ workspace_details.json.data.relationships['current-run'].links.related }}"
+
+    - name: Register current run link and get run status
+      uri:
+        url: "{{ run_link }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ tfe_token }}"
+          Content-Type: "application/vnd.api+json"
+      register: run_status
+      failed_when: run_status.status != 200 || run_status.json.data.attributes.status in ['discarded', 'canceled', 'errored', 'force_canceled', 'policy_soft_failed']
+      retries: 5
+      delay: 5
+      until: run_status.status == 200 && run_status.json.data.attributes.status in ['applied', 'planned_and_finished']
+
+    - name: Register output and state links
+      set_fact:
+        outputs_link: "{{ tfe_api_url }}{{ run_status.json.data.relationships.outputs.links.related }}"
+        state_version_link: "{{tfe_api_url }}{{ run_status.json.data.relationships.state-version.links.related }}"
+
+    - name: Verify state version status
+      uri:
+        url: "{{ state_version_link }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ tfe_token }}"
+          Content-Type: "application/vnd.api+json"
+      register: state_version_status
+      failed_when: state_version_status.json.data.attributes.status in ['discarded', 'backing_data_soft_deleted', 'backing_data_permanently_deleted']
+      retries: 5
+      delay: 5
+      until: state_version_status.status == 200 && state_version_status.json.data.attributes.status in ['finalized']
+
+    - name: Get the outputs from the state version
+      uri:
+        url: "{{ outputs_link }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ tfe_token }}"
+          Content-Type: "application/vnd.api+json"
+      register: outputs_response
+      failed_when: outputs_response.status != 200
+
+    - name: Register output values
+      set_fact:
+        outputs: "{{ outputs_response.json.data.attributes.value }}"
+
+  handlers:
+    - name: Global error handler
+      debug:
+        msg: "A task has failed. Check logs for further details."
+      when: failed
